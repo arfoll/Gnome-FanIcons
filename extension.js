@@ -33,7 +33,7 @@ class FanIndicator extends PanelMenu.Button {
         this._uiTempMap = new Map();
         this._panelTempKeys = [];
         this._panelTempsLabel = null;
-        this._fingerprint = '';
+        this._fp = '';
         this._uiReady = false;
         this._sensorsOk = true;
         this._nvidiaOk = true;
@@ -44,10 +44,10 @@ class FanIndicator extends PanelMenu.Button {
 
         this._pollId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, POLL_MS, () => {
             if (this._dead) return GLib.SOURCE_REMOVE;
-            this._poll();
+            this._poll().catch(e => console.error(`Fan Indicator: ${e.message}`));
             return GLib.SOURCE_CONTINUE;
         });
-        this._poll();
+        this._poll().catch(e => console.error(`Fan Indicator: ${e.message}`));
     }
 
     // Read a single sysfs file, returns trimmed string or null.
@@ -160,6 +160,7 @@ class FanIndicator extends PanelMenu.Button {
 
     async _poll() {
         if (this._dead) return;
+        try {
 
         const fans = [];
         const temps = [];
@@ -207,7 +208,7 @@ class FanIndicator extends PanelMenu.Button {
 
         if (this._dead) return;
 
-        const fp = this._fingerprint(fans, temps);
+        const fp = this._buildFp(fans, temps);
         if (fp !== this._fp) {
             this._fp = fp;
             this._rebuildUi(fans, temps);
@@ -215,9 +216,12 @@ class FanIndicator extends PanelMenu.Button {
             this._updateUi(fans, temps);
         }
         this._manageRotation();
+        } catch (e) {
+            console.error(`Fan Indicator: ${e.message}`);
+        }
     }
 
-    _fingerprint(fans, temps) {
+    _buildFp(fans, temps) {
         let s = '';
         for (const f of fans) s += f.key + ',';
         s += '|';
