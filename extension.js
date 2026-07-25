@@ -51,17 +51,20 @@ class FanIndicator extends PanelMenu.Button {
     }
 
     // Read a single sysfs file, returns trimmed string or null.
-    _sysfs(path) {
-        try {
-            const [ok, data] = GLib.file_get_contents(path);
-            if (ok)
-                return new TextDecoder().decode(data).trim();
-        } catch (_) {}
-        return null;
+    async _sysfs(path) {
+        return new Promise((resolve) => {
+            const f = Gio.File.new_for_path(path);
+            f.load_contents_async(null, (obj, res) => {
+                try {
+                    const [ok, data] = obj.load_contents_finish(res);
+                    resolve(ok ? new TextDecoder().decode(data).trim() : null);
+                } catch (_) { resolve(null); }
+            });
+        });
     }
 
     // Enumerate /sys/class/hwmon and read fan/temp inputs natively.
-    _readHwmon() {
+    async _readHwmon() {
         const fans = [];
         const temps = [];
         let dir;
@@ -75,7 +78,7 @@ class FanIndicator extends PanelMenu.Button {
         let entry;
         while ((entry = dir.read_name()) !== null) {
             const base = `/sys/class/hwmon/${entry}`;
-            const chip = this._sysfs(`${base}/name`) || entry;
+            const chip = await this._sysfs(`${base}/name`) || entry;
 
             let sub;
             try { sub = GLib.Dir.open(base, 0); } catch (_) { continue; }
@@ -84,11 +87,11 @@ class FanIndicator extends PanelMenu.Button {
             while ((fname = sub.read_name()) !== null) {
                 let m;
                 if ((m = fname.match(/^fan(\d+)_input$/))) {
-                    const raw = this._sysfs(`${base}/${fname}`);
+                    const raw = await this._sysfs(`${base}/${fname}`);
                     if (raw === null) continue;
                     const val = parseInt(raw, 10);
                     if (isNaN(val)) continue;
-                    const lbl = this._sysfs(`${base}/fan${m[1]}_label`) || `fan${m[1]}`;
+                    const lbl = await this._sysfs(`${base}/fan${m[1]}_label`) || `fan${m[1]}`;
                     fans.push({
                         key: `hwmon_${chip}_fan${m[1]}`,
                         label: `${lbl} (${chip})`,
@@ -96,11 +99,11 @@ class FanIndicator extends PanelMenu.Button {
                         isPercentage: false,
                     });
                 } else if ((m = fname.match(/^temp(\d+)_input$/))) {
-                    const raw = this._sysfs(`${base}/${fname}`);
+                    const raw = await this._sysfs(`${base}/${fname}`);
                     if (raw === null) continue;
                     const val = parseInt(raw, 10);
                     if (isNaN(val)) continue;
-                    const lbl = this._sysfs(`${base}/temp${m[1]}_label`) || `temp${m[1]}`;
+                    const lbl = await this._sysfs(`${base}/temp${m[1]}_label`) || `temp${m[1]}`;
                     temps.push({
                         key: `hwmon_${chip}_temp${m[1]}`,
                         label: `${lbl} (${chip})`,
@@ -116,7 +119,7 @@ class FanIndicator extends PanelMenu.Button {
     }
 
     // Check NVIDIA GPU PCI runtime status without spawning nvidia-smi.
-    _isNvidiaAwake() {
+    async _isNvidiaAwake() {
         let dir;
         try { dir = GLib.Dir.open('/sys/bus/pci/devices', 0); }
         catch (_) { return true; }
@@ -124,11 +127,11 @@ class FanIndicator extends PanelMenu.Button {
         let found = false;
         let entry;
         while ((entry = dir.read_name()) !== null) {
-            const vendor = this._sysfs(`/sys/bus/pci/devices/${entry}/vendor`);
+            const vendor = await this._sysfs(`/sys/bus/pci/devices/${entry}/vendor`);
             if (vendor !== '0x10de') continue;
 
             found = true;
-            const status = this._sysfs(
+            const status = await this._sysfs(
                 `/sys/bus/pci/devices/${entry}/power/runtime_status`);
             if (status !== 'suspended') {
                 dir.close();
@@ -170,7 +173,7 @@ class FanIndicator extends PanelMenu.Button {
         const addTemp = t => { if (!seen.has(t.key)) { seen.add(t.key); temps.push(t); } };
 
         // Native hwmon reads (no subprocess)
-        const hw = this._readHwmon();
+        const hw = await this._readHwmon();
         for (const f of hw.fans) addFan(f);
         for (const t of hw.temps) addTemp(t);
 
@@ -192,7 +195,7 @@ class FanIndicator extends PanelMenu.Button {
         }
 
         // NVIDIA GPU (skip if asleep to avoid waking it)
-        if (this._nvidiaOk && this._isNvidiaAwake()) {
+        if (this._nvidiaOk && (await this._isNvidiaAwake())) {
             try {
                 const out = await this._exec([
                     'nvidia-smi',
