@@ -354,9 +354,16 @@ class FanIndicator extends PanelMenu.Button {
         }
 
         if (any && !this._rotRunning) {
+            if (this._rotLoopId) {
+                GLib.Source.remove(this._rotLoopId);
+                this._rotLoopId = null;
+            }
             this._rotLoopId = GLib.timeout_add(
                 GLib.PRIORITY_DEFAULT, FRAME_MS, () => {
-                    if (this._dead) return GLib.SOURCE_REMOVE;
+                    if (this._dead) {
+                        this._rotLoopId = null;
+                        return GLib.SOURCE_REMOVE;
+                    }
                     this._tick();
                     return GLib.SOURCE_CONTINUE;
                 });
