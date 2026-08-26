@@ -11,6 +11,7 @@ A GNOME Shell extension that adds beautifully rotating CPU and GPU fan icons to 
 * **Dynamic Color Thresholds:** Temperatures are rendered with dynamic color thresholds (Green = Cool, Yellow = Warm, Red = Hot) both in the panel and the dropdown menu for instant thermal awareness at a glance.
 * **True System Temperature:** Replaces cluttered temperature numbers with a single, highly stable, mathematically weighted "System Temperature" calculated using a Category-Weighted Root Mean Square (RMS). Critical components like the CPU/GPU carry heavy weights, giving you the ultimate thermal summary of your machine in a single clean metric alongside a sleek GNOME temperature icon.
 * **Fluid Rotation Physics:** Fan animation speeds are mapped proportionally to your live hardware RPM.
+* **Choose Your Sensors:** Toggle a detected fan or temperature to show it in the top bar. The System Temperature RMS can be toggled separately and always uses every detected temperature sensor. Your selections are remembered.
 * **Built for GNOME 46+:** Fully modernized using ESM module imports.
 
 ## Performance & Optimizations
@@ -34,6 +35,8 @@ sudo apt install lm-sensors  # Ubuntu/Debian
 1. Clone this repository into your GNOME Shell extensions directory:
 ```bash
 git clone https://github.com/alhassanmohamed2/Gnome-FanIcons.git ~/.local/share/gnome-shell/extensions/fan-icon@alhassan
+cd ~/.local/share/gnome-shell/extensions/fan-icon@alhassan
+glib-compile-schemas schemas
 ```
 2. Log out and log back in (required on Wayland).
 3. Enable the extension via the **Extensions** app or GNOME Tweaks.

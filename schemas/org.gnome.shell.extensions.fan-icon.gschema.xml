@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.fan-icon" path="/org/gnome/shell/extensions/fan-icon/">
+    <key name="visible-fans" type="as">
+      <default>[]</default>
+      <summary>Fans shown in the top bar</summary>
+      <description>Stable identifiers for the fans selected for display.</description>
+    </key>
+    <key name="selection-initialized" type="b">
+      <default>false</default>
+      <summary>Whether the initial fan selection has been made</summary>
+      <description>Lets the extension select all initially detected fans once, without overwriting later user choices.</description>
+    </key>
+    <key name="displayed-temps" type="as">
+      <default>[]</default>
+      <summary>Temperatures shown in the top bar</summary>
+      <description>Stable identifiers for the thermal sensors selected for display.</description>
+    </key>
+    <key name="show-system-temperature" type="b">
+      <default>true</default>
+      <summary>Show the RMS system temperature in the top bar</summary>
+      <description>The RMS temperature always averages every detected temperature sensor.</description>
+    </key>
+  </schema>
+</schemalist>

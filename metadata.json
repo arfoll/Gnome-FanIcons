@@ -2,6 +2,7 @@
   "uuid": "fan-icon@alhassan",
   "name": "Fan Speed Indicator",
   "description": "Displays rotating fan icons with live RPM and temperature readings in the top bar. Automatically detects all fans and thermal sensors via hwmon, lm-sensors, and nvidia-smi.",
+  "settings-schema": "org.gnome.shell.extensions.fan-icon",
   "shell-version": [
     "46",
     "47",

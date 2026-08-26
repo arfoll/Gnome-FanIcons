@@ -18,7 +18,7 @@ const SENSORS_EVERY = 4;
 
 const FanIndicator = GObject.registerClass(
 class FanIndicator extends PanelMenu.Button {
-    _init(extensionPath) {
+    _init(extensionPath, settings) {
         super._init(0.0, 'Fan & Temp Indicator');
 
         this._box = new St.BoxLayout({
@@ -28,10 +28,11 @@ class FanIndicator extends PanelMenu.Button {
         this.add_child(this._box);
 
         this._gicon = Gio.icon_new_for_string(extensionPath + '/fan-symbolic.svg');
+        this._settings = settings;
         this._fanStates = {};
         this._uiFanMap = new Map();
         this._uiTempMap = new Map();
-        this._panelTempKeys = [];
+        this._panelTempMap = new Map();
         this._panelTempsLabel = null;
         this._fp = '';
         this._uiReady = false;
@@ -41,6 +42,17 @@ class FanIndicator extends PanelMenu.Button {
         this._rotLoopId = null;
         this._rotRunning = false;
         this._dead = false;
+        this._lastFans = [];
+        this._lastTemps = [];
+
+        this._selectionChangedId = this._settings.connect(
+            'changed', () => {
+                if (this._dead ||
+                    (this._lastFans.length === 0 && this._lastTemps.length === 0))
+                    return;
+                this._rebuildUi(this._lastFans, this._lastTemps);
+                this._manageRotation();
+            });
 
         this._pollId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, POLL_MS, () => {
             if (this._dead) return GLib.SOURCE_REMOVE;
@@ -210,6 +222,16 @@ class FanIndicator extends PanelMenu.Button {
         }
 
         if (this._dead) return;
+
+        // New installations start by showing every detected fan. After that,
+        // the user's chosen keys are left untouched, even if hardware
+        // temporarily disappears.
+        if (fans.length > 0 && !this._settings.get_boolean('selection-initialized')) {
+            this._settings.set_strv('visible-fans', fans.map(f => f.key));
+            this._settings.set_boolean('selection-initialized', true);
+        }
+        this._lastFans = fans;
+        this._lastTemps = temps;
 
         const fp = this._buildFp(fans, temps);
         if (fp !== this._fp) {
@@ -382,7 +404,7 @@ class FanIndicator extends PanelMenu.Button {
         this.menu.removeAll();
         this._uiFanMap.clear();
         this._uiTempMap.clear();
-        this._panelTempKeys = [];
+        this._panelTempMap.clear();
         this._panelTempsLabel = null;
 
         // Purge stale fan states
@@ -396,8 +418,8 @@ class FanIndicator extends PanelMenu.Button {
         }
 
         // Fans
-        for (let i = 0; i < fans.length; i++) {
-            const fan = fans[i];
+        const visibleFans = new Set(this._settings.get_strv('visible-fans'));
+        for (const fan of fans) {
             const unit = fan.isPercentage ? '%' : ' RPM';
 
             if (!this._fanStates[fan.key])
@@ -407,15 +429,23 @@ class FanIndicator extends PanelMenu.Button {
                 };
             this._fanStates[fan.key].targetRpm = fan.value;
 
-            const mi = new PopupMenu.PopupMenuItem(
-                `${fan.label}: ${fan.value}${unit}`);
+            const mi = new PopupMenu.PopupSwitchMenuItem(
+                `${fan.label}: ${fan.value}${unit}`, visibleFans.has(fan.key));
+            mi.connect('toggled', (_item, enabled) => {
+                const chosen = new Set(this._settings.get_strv('visible-fans'));
+                if (enabled)
+                    chosen.add(fan.key);
+                else
+                    chosen.delete(fan.key);
+                this._settings.set_strv('visible-fans', [...chosen]);
+            });
             this.menu.addMenuItem(mi);
 
             const ui = {label: fan.label, menuItem: mi,
                         hasPanel: false, unit, panelLabel: null,
                         lastValue: fan.value};
 
-            if (i < 2) {
+            if (visibleFans.has(fan.key)) {
                 const ico = new St.Icon({gicon: this._gicon,
                     style_class: 'system-status-icon'});
                 ico.set_pivot_point(0.5, 0.5);
@@ -446,9 +476,13 @@ class FanIndicator extends PanelMenu.Button {
         if (temps.length > 0) {
             const sysT = this._calculateSystemTemp(temps);
             const col = this._getTempColor(sysT);
-            this._uiSysTemp = new PopupMenu.PopupImageMenuItem(
-                `System Temperature: ${sysT}°C [RMS]`, 'temperature-symbolic');
+            this._uiSysTemp = new PopupMenu.PopupSwitchMenuItem(
+                `System Temperature: ${sysT}°C [RMS]`,
+                this._settings.get_boolean('show-system-temperature'));
             this._uiSysTemp.label.set_style(`color:${col};font-weight:bold;`);
+            this._uiSysTemp.connect('toggled', (_item, enabled) => {
+                this._settings.set_boolean('show-system-temperature', enabled);
+            });
             this.menu.addMenuItem(this._uiSysTemp);
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         }
@@ -457,6 +491,7 @@ class FanIndicator extends PanelMenu.Button {
         const catOrd = {cpu: 1, gpu: 2, board: 3, disk: 4, other: 5};
         const catLabel = {cpu: 'CPU', gpu: 'GPU', board: 'Motherboard',
                           disk: 'Storage', other: 'Other Sensors'};
+        const displayedTemps = new Set(this._settings.get_strv('displayed-temps'));
 
         temps.sort((a, b) => (catOrd[a.category] || 5) - (catOrd[b.category] || 5));
 
@@ -469,9 +504,17 @@ class FanIndicator extends PanelMenu.Button {
             }
 
             const col = this._getTempColor(t.value);
-            const mi = new PopupMenu.PopupImageMenuItem(
-                `${t.label}: ${t.value}°C`, this._getCategoryIcon(cat));
+            const mi = new PopupMenu.PopupSwitchMenuItem(
+                `${t.label}: ${t.value}°C`, displayedTemps.has(t.key));
             mi.label.set_style(`color:${col};`);
+            mi.connect('toggled', (_item, enabled) => {
+                const chosen = new Set(this._settings.get_strv('displayed-temps'));
+                if (enabled)
+                    chosen.add(t.key);
+                else
+                    chosen.delete(t.key);
+                this._settings.set_strv('displayed-temps', [...chosen]);
+            });
             catMenus[cat].menu.addMenuItem(mi);
 
             this._uiTempMap.set(t.key, {
@@ -483,20 +526,41 @@ class FanIndicator extends PanelMenu.Button {
             const sysT = this._calculateSystemTemp(temps);
             const col = this._getTempColor(sysT);
 
-            this._panelTempIcon = new St.Icon({
-                icon_name: 'temperature-symbolic',
-                style_class: 'system-status-icon',
-                y_align: Clutter.ActorAlign.CENTER,
-                style: `margin-left:6px;color:${col};`,
-            });
-            this._box.add_child(this._panelTempIcon);
+            if (this._settings.get_boolean('show-system-temperature')) {
+                this._panelTempIcon = new St.Icon({
+                    icon_name: 'temperature-symbolic',
+                    style_class: 'system-status-icon',
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `margin-left:6px;color:${col};`,
+                });
+                this._box.add_child(this._panelTempIcon);
 
-            this._panelTempsLabel = new St.Label({
-                text: `${sysT}°C`,
-                y_align: Clutter.ActorAlign.CENTER,
-                style: `margin-left:2px;font-weight:bold;color:${col};`,
-            });
-            this._box.add_child(this._panelTempsLabel);
+                this._panelTempsLabel = new St.Label({
+                    text: `${sysT}°C`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `margin-left:2px;font-weight:bold;color:${col};`,
+                });
+                this._box.add_child(this._panelTempsLabel);
+            }
+
+            for (const t of temps) {
+                if (!displayedTemps.has(t.key)) continue;
+                const tempCol = this._getTempColor(t.value);
+                const icon = new St.Icon({
+                    icon_name: this._getCategoryIcon(t.category || 'other'),
+                    style_class: 'system-status-icon',
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `margin-left:6px;color:${tempCol};`,
+                });
+                const label = new St.Label({
+                    text: `${t.value}°C`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `margin-left:2px;font-weight:bold;color:${tempCol};`,
+                });
+                this._box.add_child(icon);
+                this._box.add_child(label);
+                this._panelTempMap.set(t.key, {icon, label});
+            }
         }
 
         if (this._box.get_n_children() === 0) {
@@ -526,6 +590,14 @@ class FanIndicator extends PanelMenu.Button {
             ui.lastValue = t.value;
             ui.menuItem.label.text = `${ui.label}: ${t.value}°C`;
             ui.menuItem.label.set_style(`color:${this._getTempColor(t.value)};`);
+            const panelTemp = this._panelTempMap.get(t.key);
+            if (panelTemp) {
+                const col = this._getTempColor(t.value);
+                panelTemp.label.set_text(`${t.value}°C`);
+                panelTemp.label.set_style(
+                    `margin-left:2px;font-weight:bold;color:${col};`);
+                panelTemp.icon.set_style(`margin-left:6px;color:${col};`);
+            }
             dirty = true;
         }
 
@@ -577,6 +649,10 @@ class FanIndicator extends PanelMenu.Button {
 
     destroy() {
         this._dead = true;
+        if (this._selectionChangedId) {
+            this._settings.disconnect(this._selectionChangedId);
+            this._selectionChangedId = null;
+        }
         if (this._pollId) {
             GLib.Source.remove(this._pollId);
             this._pollId = null;
@@ -592,7 +668,7 @@ class FanIndicator extends PanelMenu.Button {
 
 export default class FanIconExtension extends Extension {
     enable() {
-        this._indicator = new FanIndicator(this.dir.get_path());
+        this._indicator = new FanIndicator(this.dir.get_path(), this.getSettings());
         Main.panel.addToStatusArea('fan-indicator', this._indicator, 1, 'left');
     }
 
