@@ -23,7 +23,7 @@ class FanIndicator extends PanelMenu.Button {
 
         this._box = new St.BoxLayout({
             style_class: 'panel-status-indicators-box',
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
         });
         this.add_child(this._box);
 

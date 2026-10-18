@@ -4,11 +4,10 @@
   "description": "Displays rotating fan icons with live RPM and temperature readings in the top bar. Automatically detects all fans and thermal sensors via hwmon, lm-sensors, and nvidia-smi.",
   "settings-schema": "org.gnome.shell.extensions.fan-icon",
   "shell-version": [
-    "46",
-    "47",
     "48",
     "49",
-    "50"
+    "50",
+    "51"
   ],
   "url": "https://github.com/alhassanmohamed2/Gnome-FanIcons"
 }
